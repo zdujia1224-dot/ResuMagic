@@ -25,6 +25,8 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  PanelLeft,
+  LayoutList,
 } from "lucide-react";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { STYLE_META, type StyleMeta } from "@/lib/prompt";
@@ -69,6 +71,10 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  /* ---- 移动端面板切换 ---- */
+  type Panel = "workspace" | "input" | "output";
+  const [mobilePanel, setMobilePanel] = useState<Panel>("input");
 
   /* ---- 多版本 + 风格 ---- */
   const [selectedStyle, setSelectedStyle] = useState<string>("balanced");
@@ -361,7 +367,7 @@ export default function Home() {
   return (
     <div className="flex h-screen overflow-hidden bg-[#F4F5F7]">
       {/* ==================== 左栏：职位管理舱 ==================== */}
-      <aside className="w-72 flex flex-col bg-white border-r border-border shrink-0">
+      <aside className={`w-72 flex flex-col bg-white border-r border-border shrink-0 max-lg:pb-16 ${mobilePanel !== "workspace" ? "max-lg:hidden" : ""}`}>
         <div className="px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Briefcase className="w-4 h-4 text-primary" />
@@ -674,7 +680,7 @@ export default function Home() {
       </aside>
 
       {/* ==================== 中栏：魔法匹配输入区 ==================== */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className={`flex-1 flex flex-col min-w-0 max-lg:pb-16 ${mobilePanel !== "input" ? "max-lg:hidden" : ""}`}>
         <div className="px-6 py-4 flex items-center gap-2 bg-white border-b border-border">
           <Sparkles className="w-4 h-4 text-primary" />
           <h2 className="text-sm font-semibold text-foreground tracking-tight">
@@ -808,7 +814,7 @@ export default function Home() {
       </main>
 
       {/* ==================== 右栏：STAR 闪耀输出区 ==================== */}
-      <aside className="flex-1 flex flex-col bg-white border-l border-border min-w-0">
+      <aside className={`flex-1 flex flex-col bg-white border-l border-border min-w-0 max-lg:pb-16 ${mobilePanel !== "output" ? "max-lg:hidden" : ""}`}>
         <div className="px-6 py-4 flex items-center justify-between border-b border-border">
           <div className="flex items-center gap-2">
             <Star className="w-4 h-4 text-primary" />
@@ -966,6 +972,43 @@ export default function Home() {
           </div>
         </ScrollArea>
       </aside>
+
+      {/* ==================== 移动端底部导航 ==================== */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-border z-50 flex items-center justify-around">
+        <button
+          onClick={() => setMobilePanel("workspace")}
+          className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-sm ${
+            mobilePanel === "workspace"
+              ? "text-primary"
+              : "text-muted-foreground"
+          }`}
+        >
+          <Briefcase className="w-5 h-5" />
+          <span className="text-[10px] font-medium">职位</span>
+        </button>
+        <button
+          onClick={() => setMobilePanel("input")}
+          className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-sm ${
+            mobilePanel === "input"
+              ? "text-primary"
+              : "text-muted-foreground"
+          }`}
+        >
+          <Sparkles className="w-5 h-5" />
+          <span className="text-[10px] font-medium">匹配</span>
+        </button>
+        <button
+          onClick={() => setMobilePanel("output")}
+          className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-sm ${
+            mobilePanel === "output"
+              ? "text-primary"
+              : "text-muted-foreground"
+          }`}
+        >
+          <Star className="w-5 h-5" />
+          <span className="text-[10px] font-medium">输出</span>
+        </button>
+      </nav>
     </div>
   );
 }
