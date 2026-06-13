@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,8 @@ import {
   Check,
   X,
   GripVertical,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import type { JDCard } from "@/lib/types";
@@ -45,6 +47,14 @@ export default function Home() {
   const [rawExperience, setRawExperience] = useState("");
   const [jdText, setJdText] = useState("");
 
+  /* ---- AI 生成状态 ---- */
+  const [generating, setGenerating] = useState(false);
+  const [aiOutput, setAiOutput] = useState("");
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const outputRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
   /* ---- 新建分类 ---- */
   const [newCatName, setNewCatName] = useState("");
 
@@ -57,12 +67,16 @@ export default function Home() {
   const [addingJDCatId, setAddingJDCatId] = useState<string | null>(null);
   const [newJD, setNewJD] = useState({ company: "", position: "", jdContent: "" });
 
-  /* ---- 编辑 JD 卡片（内联） ---- */
+  /* ---- 编辑 JD 卡片 ---- */
   const [editingJD, setEditingJD] = useState<{
     catId: string;
     card: JDCard;
   } | null>(null);
-  const [editJDValues, setEditJDValues] = useState({ company: "", position: "", jdContent: "" });
+  const [editJDValues, setEditJDValues] = useState({
+    company: "",
+    position: "",
+    jdContent: "",
+  });
 
   /* ---- 挂载后自动展开第一个分类 ---- */
   useEffect(() => {
@@ -74,13 +88,20 @@ export default function Home() {
     }
   }, [mounted, categories]);
 
-  /* ---- 重命名：自动聚焦输入框 ---- */
+  /* ---- 重命名：自动聚焦 ---- */
   useEffect(() => {
     if (renamingCatId && renameInputRef.current) {
       renameInputRef.current.focus();
       renameInputRef.current.select();
     }
   }, [renamingCatId]);
+
+  /* ---- AI 输出变化时自动滚动到底部 ---- */
+  useEffect(() => {
+    if (aiOutput && outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [aiOutput]);
 
   /* ======== 分类操作 ======== */
 
@@ -106,8 +127,12 @@ export default function Home() {
   };
 
   const handleDeleteCategory = (catId: string) => {
-    // 如果删的是当前选中 JD 所属分类，清空右侧关联
-    if (selectedJD && categories.find((c) => c.id === catId)?.jdCards.find((j) => j.id === selectedJD.id)) {
+    if (
+      selectedJD &&
+      categories
+        .find((c) => c.id === catId)
+        ?.jdCards.find((j) => j.id === selectedJD.id)
+    ) {
       setSelectedJD(null);
       setJdText("");
     }
@@ -129,13 +154,16 @@ export default function Home() {
 
   const handleStartEditJD = (catId: string, card: JDCard) => {
     setEditingJD({ catId, card });
-    setEditJDValues({ company: card.company, position: card.position, jdContent: card.jdContent });
+    setEditJDValues({
+      company: card.company,
+      position: card.position,
+      jdContent: card.jdContent,
+    });
   };
 
   const handleConfirmEditJD = () => {
     if (!editingJD) return;
     updateJDCard(editingJD.catId, editingJD.card.id, editJDValues);
-    // 如果编辑的正是当前选中的卡片，同步更新选中状态和中栏 JD 文本
     if (selectedJD?.id === editingJD.card.id) {
       setSelectedJD({ ...editingJD.card, ...editJDValues });
       setJdText(editJDValues.jdContent);
@@ -155,7 +183,128 @@ export default function Home() {
     deleteJDCard(catId, cardId);
   };
 
-  /* ---- 未挂载时显示空白，避免 hydration 闪烁 ---- */
+  /* ======== AI 一键动态匹配 ======== */
+
+  const handleGenerate = useCallback(async () => {
+    if (!rawExperience.trim() || !jdText.trim()) return;
+
+    // 中止上一次请求
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setGenerating(true);
+    setAiOutput("");
+    setAiError(null);
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          experience: rawExperience,
+          jd: jdText,
+        }),
+        signal: controller.signal,
+      });
+
+      // 处理非流式错误（如 400/500）
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null);
+        throw new Error(errData?.error || `请求失败 (${response.status})`);
+      }
+
+      // 确认是 SSE 流式响应
+      if (!response.body) {
+        throw new Error("浏览器不支持流式读取");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data:")) continue;
+
+          const dataStr = trimmed.slice(5).trim();
+          if (dataStr === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            // 处理流内错误
+            if (parsed.error) {
+              throw new Error(parsed.error);
+            }
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              setAiOutput((prev) => prev + content);
+            }
+          } catch (e) {
+            // SSE 行解析失败：可能是含 error 字段的 JSON
+            if ((e as Error).message !== "Unexpected end of JSON input") {
+              throw e;
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // 用户主动中止，不报错
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : "未知错误，请稍后重试";
+      setAiError(message);
+    } finally {
+      setGenerating(false);
+      abortRef.current = null;
+    }
+  }, [rawExperience, jdText]);
+
+  /* ======== 一键复制 ======== */
+
+  const handleCopy = useCallback(async () => {
+    if (!aiOutput) return;
+    // 去掉 HTML 标签，提取纯文本
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = aiOutput;
+    const plainText = tempDiv.textContent || tempDiv.innerText || "";
+    try {
+      await navigator.clipboard.writeText(plainText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+      const textarea = document.createElement("textarea");
+      textarea.value = plainText;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [aiOutput]);
+
+  /* ======== 中止生成 ======== */
+  const handleAbort = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+  };
+
+  /* ---- 未挂载 ---- */
   if (!mounted) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#F4F5F7]">
@@ -190,13 +339,14 @@ export default function Home() {
 
               return (
                 <div key={cat.id}>
-                  {/* ---- 分类名行 ---- */}
                   <div className="flex items-center gap-1 group/cat">
                     <button
                       onClick={() =>
                         setExpandedCats((prev) => {
                           const next = new Set(prev);
-                          next.has(cat.id) ? next.delete(cat.id) : next.add(cat.id);
+                          next.has(cat.id)
+                            ? next.delete(cat.id)
+                            : next.add(cat.id);
                           return next;
                         })
                       }
@@ -208,15 +358,18 @@ export default function Home() {
                         <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       )}
 
-                      {/* 重命名模式 */}
                       {isRenaming ? (
-                        <span className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                        <span
+                          className="flex items-center gap-1 flex-1 min-w-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <input
                             ref={renameInputRef}
                             value={renameValue}
                             onChange={(e) => setRenameValue(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") handleConfirmRename(cat.id);
+                              if (e.key === "Enter")
+                                handleConfirmRename(cat.id);
                               if (e.key === "Escape") handleCancelRename();
                             }}
                             className="h-6 px-1.5 text-xs border border-primary/40 rounded-sm bg-white flex-1 min-w-0 outline-none"
@@ -224,14 +377,12 @@ export default function Home() {
                           <button
                             onClick={() => handleConfirmRename(cat.id)}
                             className="p-0.5 text-green-600 hover:bg-green-50 rounded-sm"
-                            title="确认"
                           >
                             <Check className="w-3 h-3" />
                           </button>
                           <button
                             onClick={handleCancelRename}
                             className="p-0.5 text-muted-foreground hover:bg-muted rounded-sm"
-                            title="取消"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -240,25 +391,27 @@ export default function Home() {
                         <span className="truncate">{cat.name}</span>
                       )}
 
-                      <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0 h-5 shrink-0">
+                      <Badge
+                        variant="secondary"
+                        className="ml-auto text-[10px] px-1.5 py-0 h-5 shrink-0"
+                      >
                         {cat.jdCards.length}
                       </Badge>
                     </button>
 
-                    {/* 操作图标：重命名 / 删除 */}
                     {!isRenaming && (
                       <div className="flex items-center shrink-0 opacity-0 group-hover/cat:opacity-100 transition-opacity">
                         <button
-                          onClick={() => handleStartRename(cat.id, cat.name)}
+                          onClick={() =>
+                            handleStartRename(cat.id, cat.name)
+                          }
                           className="p-0.5 text-muted-foreground hover:text-foreground rounded-sm"
-                          title="重命名"
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => handleDeleteCategory(cat.id)}
                           className="p-0.5 text-muted-foreground hover:text-destructive rounded-sm"
-                          title="删除分类"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -266,7 +419,6 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* ---- JD 卡片列表 ---- */}
                   {isExpanded && (
                     <div className="ml-3 mt-0.5 space-y-1">
                       {cat.jdCards.map((card) => {
@@ -276,12 +428,14 @@ export default function Home() {
                         return (
                           <div key={card.id} className="group/jd relative">
                             {isEditing ? (
-                              /* ---- 编辑模式 ---- */
                               <div className="px-2 py-2 rounded-sm border border-primary/30 bg-white space-y-1.5">
                                 <input
                                   value={editJDValues.company}
                                   onChange={(e) =>
-                                    setEditJDValues((prev) => ({ ...prev, company: e.target.value }))
+                                    setEditJDValues((prev) => ({
+                                      ...prev,
+                                      company: e.target.value,
+                                    }))
                                   }
                                   placeholder="公司名"
                                   className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
@@ -289,7 +443,10 @@ export default function Home() {
                                 <input
                                   value={editJDValues.position}
                                   onChange={(e) =>
-                                    setEditJDValues((prev) => ({ ...prev, position: e.target.value }))
+                                    setEditJDValues((prev) => ({
+                                      ...prev,
+                                      position: e.target.value,
+                                    }))
                                   }
                                   placeholder="职位名"
                                   className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
@@ -297,7 +454,10 @@ export default function Home() {
                                 <Textarea
                                   value={editJDValues.jdContent}
                                   onChange={(e) =>
-                                    setEditJDValues((prev) => ({ ...prev, jdContent: e.target.value }))
+                                    setEditJDValues((prev) => ({
+                                      ...prev,
+                                      jdContent: e.target.value,
+                                    }))
                                   }
                                   placeholder="JD 内容…"
                                   className="text-xs min-h-[60px] resize-y"
@@ -309,19 +469,20 @@ export default function Home() {
                                     className="h-6 text-xs"
                                     onClick={handleCancelEditJD}
                                   >
-                                    <X className="w-3 h-3 mr-1" />取消
+                                    <X className="w-3 h-3 mr-1" />
+                                    取消
                                   </Button>
                                   <Button
                                     size="sm"
                                     className="h-6 text-xs bg-primary"
                                     onClick={handleConfirmEditJD}
                                   >
-                                    <Check className="w-3 h-3 mr-1" />保存
+                                    <Check className="w-3 h-3 mr-1" />
+                                    保存
                                   </Button>
                                 </div>
                               </div>
                             ) : (
-                              /* ---- 正常模式 ---- */
                               <button
                                 onClick={() => handleSelectJD(card)}
                                 className={`w-full text-left px-3 py-2 rounded-sm text-xs transition-colors border ${
@@ -335,7 +496,6 @@ export default function Home() {
                                   <span className="font-medium text-foreground truncate flex-1">
                                     {card.company}
                                   </span>
-                                  {/* hover 显示操作 */}
                                   <div className="flex items-center shrink-0 opacity-0 group-hover/jd:opacity-100 transition-opacity">
                                     <span
                                       onClick={(e) => {
@@ -343,7 +503,6 @@ export default function Home() {
                                         handleStartEditJD(cat.id, card);
                                       }}
                                       className="p-0.5 text-muted-foreground hover:text-foreground"
-                                      title="编辑"
                                     >
                                       <Pencil className="w-3 h-3" />
                                     </span>
@@ -353,38 +512,53 @@ export default function Home() {
                                         handleDeleteJD(cat.id, card.id);
                                       }}
                                       className="p-0.5 text-muted-foreground hover:text-destructive"
-                                      title="删除"
                                     >
                                       <Trash2 className="w-3 h-3" />
                                     </span>
                                   </div>
                                 </div>
-                                <p className="truncate mt-0.5 ml-4">{card.position}</p>
+                                <p className="truncate mt-0.5 ml-4">
+                                  {card.position}
+                                </p>
                               </button>
                             )}
                           </div>
                         );
                       })}
 
-                      {/* ---- 新建 JD 卡片 ---- */}
                       {isAddingJD ? (
                         <div className="px-2 py-2 rounded-sm border border-dashed border-primary/40 bg-white space-y-1.5">
                           <input
                             value={newJD.company}
-                            onChange={(e) => setNewJD((prev) => ({ ...prev, company: e.target.value }))}
+                            onChange={(e) =>
+                              setNewJD((prev) => ({
+                                ...prev,
+                                company: e.target.value,
+                              }))
+                            }
                             placeholder="公司名"
                             className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
                             autoFocus
                           />
                           <input
                             value={newJD.position}
-                            onChange={(e) => setNewJD((prev) => ({ ...prev, position: e.target.value }))}
+                            onChange={(e) =>
+                              setNewJD((prev) => ({
+                                ...prev,
+                                position: e.target.value,
+                              }))
+                            }
                             placeholder="职位名"
                             className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
                           />
                           <Textarea
                             value={newJD.jdContent}
-                            onChange={(e) => setNewJD((prev) => ({ ...prev, jdContent: e.target.value }))}
+                            onChange={(e) =>
+                              setNewJD((prev) => ({
+                                ...prev,
+                                jdContent: e.target.value,
+                              }))
+                            }
                             placeholder="粘贴 JD 内容…"
                             className="text-xs min-h-[60px] resize-y"
                           />
@@ -395,17 +569,23 @@ export default function Home() {
                               className="h-6 text-xs"
                               onClick={() => {
                                 setAddingJDCatId(null);
-                                setNewJD({ company: "", position: "", jdContent: "" });
+                                setNewJD({
+                                  company: "",
+                                  position: "",
+                                  jdContent: "",
+                                });
                               }}
                             >
-                              <X className="w-3 h-3 mr-1" />取消
+                              <X className="w-3 h-3 mr-1" />
+                              取消
                             </Button>
                             <Button
                               size="sm"
                               className="h-6 text-xs bg-primary"
                               onClick={() => handleAddJD(cat.id)}
                             >
-                              <Check className="w-3 h-3 mr-1" />添加
+                              <Check className="w-3 h-3 mr-1" />
+                              添加
                             </Button>
                           </div>
                         </div>
@@ -426,7 +606,6 @@ export default function Home() {
           </div>
         </ScrollArea>
 
-        {/* ---- 左栏底部：新建分类 ---- */}
         <Separator />
         <div className="p-3">
           <div className="flex gap-2">
@@ -479,6 +658,7 @@ export default function Home() {
                   className="min-h-[180px] resize-y text-sm leading-relaxed"
                   value={rawExperience}
                   onChange={(e) => setRawExperience(e.target.value)}
+                  disabled={generating}
                 />
               </CardContent>
             </Card>
@@ -502,27 +682,58 @@ export default function Home() {
                   value={jdText}
                   onChange={(e) => {
                     setJdText(e.target.value);
-                    if (selectedJD && e.target.value !== selectedJD.jdContent) {
+                    if (
+                      selectedJD &&
+                      e.target.value !== selectedJD.jdContent
+                    ) {
                       setSelectedJD(null);
                     }
                   }}
+                  disabled={generating}
                 />
               </CardContent>
             </Card>
 
-            <div className="flex justify-center pt-2">
-              <Button
-                size="lg"
-                className="px-10 text-sm font-semibold tracking-wide bg-primary hover:bg-primary/90 transition-colors"
-                disabled
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                AI 一键动态匹配
-              </Button>
+            {/* ---- AI 按钮 ---- */}
+            <div className="flex flex-col items-center gap-2 pt-2">
+              {generating ? (
+                <div className="flex items-center gap-3">
+                  <Button
+                    size="lg"
+                    className="px-10 text-sm font-semibold tracking-wide bg-primary/80"
+                    disabled
+                  >
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    匹配中…
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 text-xs"
+                    onClick={handleAbort}
+                  >
+                    取消
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="lg"
+                  className="px-10 text-sm font-semibold tracking-wide bg-primary hover:bg-primary/90 transition-colors"
+                  onClick={handleGenerate}
+                  disabled={!rawExperience.trim() || !jdText.trim()}
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  AI 一键动态匹配
+                </Button>
+              )}
+
+              {aiError && (
+                <div className="flex items-center gap-1.5 text-xs text-destructive mt-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {aiError}
+                </div>
+              )}
             </div>
-            <p className="text-center text-[10px] text-muted-foreground">
-              Phase 3 接通大模型 API · 当前按钮为静态占位
-            </p>
           </div>
         </ScrollArea>
       </main>
@@ -536,60 +747,103 @@ export default function Home() {
               STAR 闪耀输出
             </h2>
           </div>
-          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" disabled>
-            <Copy className="w-3.5 h-3.5" />
-            一键复制
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1.5"
+            onClick={handleCopy}
+            disabled={!aiOutput || generating}
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                已复制
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                一键复制
+              </>
+            )}
           </Button>
         </div>
 
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-4">
-            <div className="rounded-sm border border-border bg-[#F4F5F7]/50 p-5 space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                生成预览
-              </p>
-
-              <div className="text-sm leading-relaxed">
-                <span className="text-blue-600 font-medium">主导</span>
-                了用户增长项目，利用{" "}
-                <span className="text-green-600 font-medium">
-                  Python 进行数据分析
-                </span>{" "}
-                洞察用户流失漏斗，
-                <span className="text-blue-600 font-medium">优化</span>
-                了注册留存策略，最终使次日留存率
-                <span className="text-orange-600 font-medium">提升了 15%</span>。
-              </div>
-
-              <div className="text-sm leading-relaxed">
-                <span className="text-blue-600 font-medium">搭建</span>
-                了公司级的{" "}
-                <span className="text-green-600 font-medium">
-                  埋点设计与用户画像
-                </span>{" "}
-                体系，
-                <span className="text-blue-600 font-medium">推动</span>
-                数据驱动决策落地，覆盖
-                <span className="text-orange-600 font-medium">3 条核心业务线</span>
-                ，数据查询效率
-                <span className="text-orange-600 font-medium">提升 40%</span>。
-              </div>
-
-              <div className="text-sm leading-relaxed">
-                <span className="text-blue-600 font-medium">策划</span>
-                并
-                <span className="text-blue-600 font-medium">执行</span>
-                了{" "}
-                <span className="text-green-600 font-medium">
-                  多场线上线下联动活动
-                </span>
-                ，整合渠道资源，实现单场活动新增用户
-                <span className="text-orange-600 font-medium">8.2 万</span>，
-                ROI
-                <span className="text-orange-600 font-medium">达到 3.5 倍</span>。
-              </div>
+            {/* ---- AI 输出 / 预览 ---- */}
+            <div className="rounded-sm border border-border bg-[#F4F5F7]/50 p-5 min-h-[240px]">
+              {aiOutput ? (
+                /* 真实 AI 输出：渲染 HTML 高亮 */
+                <div
+                  ref={outputRef}
+                  className="text-sm leading-relaxed space-y-1 max-h-[480px] overflow-y-auto"
+                  dangerouslySetInnerHTML={{ __html: aiOutput }}
+                />
+              ) : generating ? (
+                /* 等待首批 token */
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  AI 正在思考并生成…
+                </div>
+              ) : (
+                /* 静态预览示例 */
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    生成预览
+                  </p>
+                  <div className="text-sm leading-relaxed">
+                    <span className="text-blue-600 font-medium">主导</span>
+                    了用户增长项目，利用{" "}
+                    <span className="text-green-600 font-medium">
+                      Python 进行数据分析
+                    </span>{" "}
+                    洞察用户流失漏斗，
+                    <span className="text-blue-600 font-medium">优化</span>
+                    了注册留存策略，最终使次日留存率
+                    <span className="text-orange-600 font-medium">
+                      提升了 15%
+                    </span>
+                    。
+                  </div>
+                  <div className="text-sm leading-relaxed">
+                    <span className="text-blue-600 font-medium">搭建</span>
+                    了公司级的{" "}
+                    <span className="text-green-600 font-medium">
+                      埋点设计与用户画像
+                    </span>{" "}
+                    体系，
+                    <span className="text-blue-600 font-medium">推动</span>
+                    数据驱动决策落地，覆盖
+                    <span className="text-orange-600 font-medium">
+                      3 条核心业务线
+                    </span>
+                    ，数据查询效率
+                    <span className="text-orange-600 font-medium">
+                      提升 40%
+                    </span>
+                    。
+                  </div>
+                  <div className="text-sm leading-relaxed">
+                    <span className="text-blue-600 font-medium">策划</span>
+                    并
+                    <span className="text-blue-600 font-medium">执行</span>
+                    了{" "}
+                    <span className="text-green-600 font-medium">
+                      多场线上线下联动活动
+                    </span>
+                    ，整合渠道资源，实现单场活动新增用户
+                    <span className="text-orange-600 font-medium">8.2 万</span>
+                    ，ROI
+                    <span className="text-orange-600 font-medium">
+                      达到 3.5 倍
+                    </span>
+                    。
+                  </div>
+                </div>
+              )}
             </div>
 
+            {/* ---- 高亮图例 ---- */}
             <Card className="shadow-none border-border">
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
