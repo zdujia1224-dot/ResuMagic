@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { SYSTEM_PROMPT } from "@/lib/prompt";
+import { getSystemPrompt } from "@/lib/prompt";
 
 /**
  * POST /api/generate
@@ -14,11 +14,13 @@ export async function POST(request: NextRequest) {
   /* ---- 1. 解析请求 ---- */
   let experience: string;
   let jd: string;
+  let style: string;
 
   try {
     const body = await request.json();
     experience = body.experience;
     jd = body.jd;
+    style = body.style || "balanced";
   } catch {
     return new Response(JSON.stringify({ error: "请求格式错误，请提供 JSON body" }), {
       status: 400,
@@ -59,7 +61,7 @@ export async function POST(request: NextRequest) {
   const apiUrl = `${baseURL.replace(/\/$/, "")}/chat/completions`;
 
   const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: getSystemPrompt(style) },
     {
       role: "user",
       content: `【原始经历】\n${experience}\n\n【目标岗位 JD】\n${jd}\n\n请根据以上信息生成 STAR 法则 Bullet Points：`,

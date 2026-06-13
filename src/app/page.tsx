@@ -24,9 +24,25 @@ import {
   GripVertical,
   Loader2,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { STYLE_META, type StyleMeta } from "@/lib/prompt";
 import type { JDCard } from "@/lib/types";
+
+/* ---- 版本数据结构 ---- */
+interface OutputVersion {
+  id: string;
+  styleKey: string;
+  label: string;
+  html: string;
+}
+
+let _versionCounter = 0;
+function nextVersionId() {
+  _versionCounter++;
+  return `v${Date.now()}-${_versionCounter}`;
+}
 
 export default function Home() {
   /* ---- 数据层 ---- */
@@ -49,11 +65,19 @@ export default function Home() {
 
   /* ---- AI 生成状态 ---- */
   const [generating, setGenerating] = useState(false);
-  const [aiOutput, setAiOutput] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  /* ---- 多版本 + 风格 ---- */
+  const [selectedStyle, setSelectedStyle] = useState<string>("balanced");
+  const [versions, setVersions] = useState<OutputVersion[]>([]);
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
+
+  /* ---- 当前活跃版本的输出 ---- */
+  const activeVersion = versions.find((v) => v.id === activeVersionId);
+  const aiOutput = activeVersion?.html || "";
 
   /* ---- 新建分类 ---- */
   const [newCatName, setNewCatName] = useState("");
@@ -188,7 +212,6 @@ export default function Home() {
   const handleGenerate = useCallback(async () => {
     if (!rawExperience.trim() || !jdText.trim()) return;
 
-    // 中止上一次请求
     if (abortRef.current) {
       abortRef.current.abort();
     }
@@ -196,8 +219,19 @@ export default function Home() {
     abortRef.current = controller;
 
     setGenerating(true);
-    setAiOutput("");
     setAiError(null);
+
+    // 为这个新版本建立占位入口
+    const styleMeta = STYLE_META.find((s) => s.key === selectedStyle) || STYLE_META[0];
+    const versionId = nextVersionId();
+    const newVersion: OutputVersion = {
+      id: versionId,
+      styleKey: selectedStyle,
+      label: `${styleMeta.icon} ${styleMeta.label}`,
+      html: "",
+    };
+    setVersions((prev) => [...prev, newVersion]);
+    setActiveVersionId(versionId);
 
     try {
       const response = await fetch("/api/generate", {
@@ -206,17 +240,16 @@ export default function Home() {
         body: JSON.stringify({
           experience: rawExperience,
           jd: jdText,
+          style: selectedStyle,
         }),
         signal: controller.signal,
       });
 
-      // 处理非流式错误（如 400/500）
       if (!response.ok) {
         const errData = await response.json().catch(() => null);
         throw new Error(errData?.error || `请求失败 (${response.status})`);
       }
 
-      // 确认是 SSE 流式响应
       if (!response.body) {
         throw new Error("浏览器不支持流式读取");
       }
@@ -242,16 +275,18 @@ export default function Home() {
 
           try {
             const parsed = JSON.parse(dataStr);
-            // 处理流内错误
             if (parsed.error) {
               throw new Error(parsed.error);
             }
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
-              setAiOutput((prev) => prev + content);
+              setVersions((prev) =>
+                prev.map((v) =>
+                  v.id === versionId ? { ...v, html: v.html + content } : v
+                )
+              );
             }
           } catch (e) {
-            // SSE 行解析失败：可能是含 error 字段的 JSON
             if ((e as Error).message !== "Unexpected end of JSON input") {
               throw e;
             }
@@ -260,7 +295,15 @@ export default function Home() {
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        // 用户主动中止，不报错
+        // 删除已创建的空版本
+        setVersions((prev) => {
+          const filtered = prev.filter((v) => v.id !== versionId);
+          if (activeVersionId === versionId) {
+            const last = filtered[filtered.length - 1];
+            setActiveVersionId(last?.id || null);
+          }
+          return filtered;
+        });
         return;
       }
       const message =
@@ -270,13 +313,13 @@ export default function Home() {
       setGenerating(false);
       abortRef.current = null;
     }
-  }, [rawExperience, jdText]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawExperience, jdText, selectedStyle, activeVersionId]);
 
   /* ======== 一键复制 ======== */
 
   const handleCopy = useCallback(async () => {
     if (!aiOutput) return;
-    // 去掉 HTML 标签，提取纯文本
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = aiOutput;
     const plainText = tempDiv.textContent || tempDiv.innerText || "";
@@ -285,7 +328,6 @@ export default function Home() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback
       const textarea = document.createElement("textarea");
       textarea.value = plainText;
       document.body.appendChild(textarea);
@@ -694,6 +736,31 @@ export default function Home() {
               </CardContent>
             </Card>
 
+            {/* ---- 风格选择器 ---- */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                选择写作风格
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {STYLE_META.map((s: StyleMeta) => (
+                  <button
+                    key={s.key}
+                    onClick={() => setSelectedStyle(s.key)}
+                    disabled={generating}
+                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-sm text-xs font-medium border transition-colors ${
+                      selectedStyle === s.key
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : "bg-white text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
+                    }`}
+                    title={s.desc}
+                  >
+                    <span className="text-sm leading-none">{s.icon}</span>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* ---- AI 按钮 ---- */}
             <div className="flex flex-col items-center gap-2 pt-2">
               {generating ? (
@@ -723,7 +790,9 @@ export default function Home() {
                   disabled={!rawExperience.trim() || !jdText.trim()}
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  AI 一键动态匹配
+                  {versions.length === 0
+                    ? "AI 一键动态匹配"
+                    : "再次匹配（新版本）"}
                 </Button>
               )}
 
@@ -747,46 +816,82 @@ export default function Home() {
               STAR 闪耀输出
             </h2>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1.5"
-            onClick={handleCopy}
-            disabled={!aiOutput || generating}
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5" />
-                已复制
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                一键复制
-              </>
+          <div className="flex items-center gap-2">
+            {/* 再次匹配快捷按钮 */}
+            {versions.length > 0 && !generating && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={handleGenerate}
+                disabled={!rawExperience.trim() || !jdText.trim()}
+                title={`以 ${STYLE_META.find((s) => s.key === selectedStyle)?.label} 风格再次生成`}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                再生成一版
+              </Button>
             )}
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5"
+              onClick={handleCopy}
+              disabled={!aiOutput || generating}
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  已复制
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  一键复制
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-4">
+            {/* ---- 版本选项卡 ---- */}
+            {versions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {versions.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setActiveVersionId(v.id)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-medium border transition-colors ${
+                      activeVersionId === v.id
+                        ? "bg-primary/10 border-primary/40 text-primary"
+                        : "bg-white border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                    }`}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* ---- AI 输出 / 预览 ---- */}
             <div className="rounded-sm border border-border bg-[#F4F5F7]/50 p-5 min-h-[240px]">
               {aiOutput ? (
-                /* 真实 AI 输出：渲染 HTML 高亮 */
                 <div
                   ref={outputRef}
                   className="text-sm leading-relaxed space-y-1 max-h-[480px] overflow-y-auto"
                   dangerouslySetInnerHTML={{ __html: aiOutput }}
                 />
               ) : generating ? (
-                /* 等待首批 token */
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  AI 正在思考并生成…
+                  AI 正在思考并生成
+                  {(() => {
+                    const styleMeta = STYLE_META.find((s) => s.key === selectedStyle);
+                    return styleMeta ? `（${styleMeta.icon} ${styleMeta.label}）…` : "…";
+                  })()}
                 </div>
               ) : (
-                /* 静态预览示例 */
                 <div className="space-y-3">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     生成预览
@@ -820,22 +925,6 @@ export default function Home() {
                     ，数据查询效率
                     <span className="text-orange-600 font-medium">
                       提升 40%
-                    </span>
-                    。
-                  </div>
-                  <div className="text-sm leading-relaxed">
-                    <span className="text-blue-600 font-medium">策划</span>
-                    并
-                    <span className="text-blue-600 font-medium">执行</span>
-                    了{" "}
-                    <span className="text-green-600 font-medium">
-                      多场线上线下联动活动
-                    </span>
-                    ，整合渠道资源，实现单场活动新增用户
-                    <span className="text-orange-600 font-medium">8.2 万</span>
-                    ，ROI
-                    <span className="text-orange-600 font-medium">
-                      达到 3.5 倍
                     </span>
                     。
                   </div>
