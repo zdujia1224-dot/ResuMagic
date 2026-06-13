@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -17,92 +17,152 @@ import {
   Briefcase,
   FileText,
   Star,
+  Pencil,
+  Trash2,
+  Check,
+  X,
+  GripVertical,
 } from "lucide-react";
-
-/* ============================================================
-   类型定义（Phase 2 会抽到独立文件）
-   ============================================================ */
-interface JDCard {
-  id: string;
-  company: string;
-  position: string;
-  jdContent: string;
-}
-
-interface Category {
-  id: string;
-  name: string;
-  jdCards: JDCard[];
-}
-
-/* ============================================================
-   占位数据（Phase 2 会从 localStorage 读写）
-   ============================================================ */
-const DEMO_CATEGORIES: Category[] = [
-  {
-    id: "cat-1",
-    name: "产品经理",
-    jdCards: [
-      {
-        id: "jd-1",
-        company: "字节跳动",
-        position: "高级产品经理",
-        jdContent:
-          "负责用户增长方向，要求具备数据分析能力，熟悉 A/B 测试，能独立主导跨部门项目…",
-      },
-      {
-        id: "jd-2",
-        company: "腾讯",
-        position: "产品经理（微信生态）",
-        jdContent:
-          "负责微信小程序生态的产品规划与落地，要求有 B 端 SaaS 经验，擅长用户研究…",
-      },
-    ],
-  },
-  {
-    id: "cat-2",
-    name: "数据分析师",
-    jdCards: [
-      {
-        id: "jd-3",
-        company: "阿里巴巴",
-        position: "数据分析师",
-        jdContent:
-          "负责业务数据建模与可视化，精通 SQL/Python，能独立完成埋点设计与用户画像分析…",
-      },
-    ],
-  },
-  {
-    id: "cat-3",
-    name: "运营经理",
-    jdCards: [],
-  },
-];
+import { useWorkspace } from "@/hooks/useWorkspace";
+import type { JDCard } from "@/lib/types";
 
 export default function Home() {
+  /* ---- 数据层 ---- */
+  const {
+    categories,
+    mounted,
+    addCategory,
+    renameCategory,
+    deleteCategory,
+    addJDCard,
+    updateJDCard,
+    deleteJDCard,
+  } = useWorkspace();
+
   /* ---- 交互状态 ---- */
-  const [categories] = useState<Category[]>(DEMO_CATEGORIES);
-  const [expandedCats, setExpandedCats] = useState<Set<string>>(
-    new Set(["cat-1"])
-  );
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
   const [selectedJD, setSelectedJD] = useState<JDCard | null>(null);
   const [rawExperience, setRawExperience] = useState("");
   const [jdText, setJdText] = useState("");
 
-  /* ---- 分类折叠/展开 ---- */
-  const toggleCategory = (catId: string) => {
-    setExpandedCats((prev) => {
-      const next = new Set(prev);
-      next.has(catId) ? next.delete(catId) : next.add(catId);
-      return next;
-    });
+  /* ---- 新建分类 ---- */
+  const [newCatName, setNewCatName] = useState("");
+
+  /* ---- 重命名分类 ---- */
+  const [renamingCatId, setRenamingCatId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  /* ---- 新建 JD 卡片 ---- */
+  const [addingJDCatId, setAddingJDCatId] = useState<string | null>(null);
+  const [newJD, setNewJD] = useState({ company: "", position: "", jdContent: "" });
+
+  /* ---- 编辑 JD 卡片（内联） ---- */
+  const [editingJD, setEditingJD] = useState<{
+    catId: string;
+    card: JDCard;
+  } | null>(null);
+  const [editJDValues, setEditJDValues] = useState({ company: "", position: "", jdContent: "" });
+
+  /* ---- 挂载后自动展开第一个分类 ---- */
+  useEffect(() => {
+    if (mounted && categories.length > 0) {
+      setExpandedCats((prev) => {
+        if (prev.size === 0) return new Set([categories[0].id]);
+        return prev;
+      });
+    }
+  }, [mounted, categories]);
+
+  /* ---- 重命名：自动聚焦输入框 ---- */
+  useEffect(() => {
+    if (renamingCatId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingCatId]);
+
+  /* ======== 分类操作 ======== */
+
+  const handleAddCategory = () => {
+    addCategory(newCatName);
+    setNewCatName("");
   };
 
-  /* ---- 点击 JD 卡片 ---- */
+  const handleStartRename = (catId: string, currentName: string) => {
+    setRenamingCatId(catId);
+    setRenameValue(currentName);
+  };
+
+  const handleConfirmRename = (catId: string) => {
+    renameCategory(catId, renameValue);
+    setRenamingCatId(null);
+    setRenameValue("");
+  };
+
+  const handleCancelRename = () => {
+    setRenamingCatId(null);
+    setRenameValue("");
+  };
+
+  const handleDeleteCategory = (catId: string) => {
+    // 如果删的是当前选中 JD 所属分类，清空右侧关联
+    if (selectedJD && categories.find((c) => c.id === catId)?.jdCards.find((j) => j.id === selectedJD.id)) {
+      setSelectedJD(null);
+      setJdText("");
+    }
+    deleteCategory(catId);
+  };
+
+  /* ======== JD 卡片操作 ======== */
+
   const handleSelectJD = (card: JDCard) => {
     setSelectedJD(card);
     setJdText(card.jdContent);
   };
+
+  const handleAddJD = (catId: string) => {
+    addJDCard(catId, newJD);
+    setAddingJDCatId(null);
+    setNewJD({ company: "", position: "", jdContent: "" });
+  };
+
+  const handleStartEditJD = (catId: string, card: JDCard) => {
+    setEditingJD({ catId, card });
+    setEditJDValues({ company: card.company, position: card.position, jdContent: card.jdContent });
+  };
+
+  const handleConfirmEditJD = () => {
+    if (!editingJD) return;
+    updateJDCard(editingJD.catId, editingJD.card.id, editJDValues);
+    // 如果编辑的正是当前选中的卡片，同步更新选中状态和中栏 JD 文本
+    if (selectedJD?.id === editingJD.card.id) {
+      setSelectedJD({ ...editingJD.card, ...editJDValues });
+      setJdText(editJDValues.jdContent);
+    }
+    setEditingJD(null);
+  };
+
+  const handleCancelEditJD = () => {
+    setEditingJD(null);
+  };
+
+  const handleDeleteJD = (catId: string, cardId: string) => {
+    if (selectedJD?.id === cardId) {
+      setSelectedJD(null);
+      setJdText("");
+    }
+    deleteJDCard(catId, cardId);
+  };
+
+  /* ---- 未挂载时显示空白，避免 hydration 闪烁 ---- */
+  if (!mounted) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#F4F5F7]">
+        <p className="text-sm text-muted-foreground">加载中…</p>
+      </div>
+    );
+  }
 
   /* ============================================================
      UI 渲染
@@ -111,7 +171,6 @@ export default function Home() {
     <div className="flex h-screen overflow-hidden bg-[#F4F5F7]">
       {/* ==================== 左栏：职位管理舱 ==================== */}
       <aside className="w-72 flex flex-col bg-white border-r border-border shrink-0">
-        {/* 左栏 Header */}
         <div className="px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Briefcase className="w-4 h-4 text-primary" />
@@ -119,62 +178,245 @@ export default function Home() {
               职位管理舱
             </h2>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7" title="新建分类">
-            <Plus className="w-4 h-4" />
-          </Button>
         </div>
         <Separator />
 
-        {/* 分类列表 */}
         <ScrollArea className="flex-1">
           <div className="p-3 space-y-1">
             {categories.map((cat) => {
               const isExpanded = expandedCats.has(cat.id);
+              const isRenaming = renamingCatId === cat.id;
+              const isAddingJD = addingJDCatId === cat.id;
+
               return (
                 <div key={cat.id}>
-                  {/* 分类名 */}
-                  <button
-                    onClick={() => toggleCategory(cat.id)}
-                    className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-sm text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                    )}
-                    {cat.name}
-                    <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0 h-5">
-                      {cat.jdCards.length}
-                    </Badge>
-                  </button>
+                  {/* ---- 分类名行 ---- */}
+                  <div className="flex items-center gap-1 group/cat">
+                    <button
+                      onClick={() =>
+                        setExpandedCats((prev) => {
+                          const next = new Set(prev);
+                          next.has(cat.id) ? next.delete(cat.id) : next.add(cat.id);
+                          return next;
+                        })
+                      }
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-sm text-sm font-medium text-foreground hover:bg-muted transition-colors flex-1 min-w-0"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      )}
 
-                  {/* JD 卡片列表 */}
+                      {/* 重命名模式 */}
+                      {isRenaming ? (
+                        <span className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            ref={renameInputRef}
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleConfirmRename(cat.id);
+                              if (e.key === "Escape") handleCancelRename();
+                            }}
+                            className="h-6 px-1.5 text-xs border border-primary/40 rounded-sm bg-white flex-1 min-w-0 outline-none"
+                          />
+                          <button
+                            onClick={() => handleConfirmRename(cat.id)}
+                            className="p-0.5 text-green-600 hover:bg-green-50 rounded-sm"
+                            title="确认"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={handleCancelRename}
+                            className="p-0.5 text-muted-foreground hover:bg-muted rounded-sm"
+                            title="取消"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="truncate">{cat.name}</span>
+                      )}
+
+                      <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0 h-5 shrink-0">
+                        {cat.jdCards.length}
+                      </Badge>
+                    </button>
+
+                    {/* 操作图标：重命名 / 删除 */}
+                    {!isRenaming && (
+                      <div className="flex items-center shrink-0 opacity-0 group-hover/cat:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleStartRename(cat.id, cat.name)}
+                          className="p-0.5 text-muted-foreground hover:text-foreground rounded-sm"
+                          title="重命名"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCategory(cat.id)}
+                          className="p-0.5 text-muted-foreground hover:text-destructive rounded-sm"
+                          title="删除分类"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ---- JD 卡片列表 ---- */}
                   {isExpanded && (
                     <div className="ml-3 mt-0.5 space-y-1">
-                      {cat.jdCards.length === 0 ? (
-                        <p className="text-xs text-muted-foreground px-2 py-3 italic">
-                          暂无 JD，点击 + 添加
-                        </p>
-                      ) : (
-                        cat.jdCards.map((card) => {
-                          const isActive = selectedJD?.id === card.id;
-                          return (
-                            <button
-                              key={card.id}
-                              onClick={() => handleSelectJD(card)}
-                              className={`w-full text-left px-3 py-2 rounded-sm text-xs transition-colors border ${
-                                isActive
-                                  ? "bg-primary/5 border-primary/30 text-foreground"
-                                  : "bg-white border-transparent hover:bg-muted text-muted-foreground"
-                              }`}
+                      {cat.jdCards.map((card) => {
+                        const isActive = selectedJD?.id === card.id;
+                        const isEditing = editingJD?.card.id === card.id;
+
+                        return (
+                          <div key={card.id} className="group/jd relative">
+                            {isEditing ? (
+                              /* ---- 编辑模式 ---- */
+                              <div className="px-2 py-2 rounded-sm border border-primary/30 bg-white space-y-1.5">
+                                <input
+                                  value={editJDValues.company}
+                                  onChange={(e) =>
+                                    setEditJDValues((prev) => ({ ...prev, company: e.target.value }))
+                                  }
+                                  placeholder="公司名"
+                                  className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
+                                />
+                                <input
+                                  value={editJDValues.position}
+                                  onChange={(e) =>
+                                    setEditJDValues((prev) => ({ ...prev, position: e.target.value }))
+                                  }
+                                  placeholder="职位名"
+                                  className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
+                                />
+                                <Textarea
+                                  value={editJDValues.jdContent}
+                                  onChange={(e) =>
+                                    setEditJDValues((prev) => ({ ...prev, jdContent: e.target.value }))
+                                  }
+                                  placeholder="JD 内容…"
+                                  className="text-xs min-h-[60px] resize-y"
+                                />
+                                <div className="flex gap-1.5 justify-end">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 text-xs"
+                                    onClick={handleCancelEditJD}
+                                  >
+                                    <X className="w-3 h-3 mr-1" />取消
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="h-6 text-xs bg-primary"
+                                    onClick={handleConfirmEditJD}
+                                  >
+                                    <Check className="w-3 h-3 mr-1" />保存
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              /* ---- 正常模式 ---- */
+                              <button
+                                onClick={() => handleSelectJD(card)}
+                                className={`w-full text-left px-3 py-2 rounded-sm text-xs transition-colors border ${
+                                  isActive
+                                    ? "bg-primary/5 border-primary/30 text-foreground"
+                                    : "bg-white border-transparent hover:bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                <div className="flex items-center gap-1">
+                                  <GripVertical className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                                  <span className="font-medium text-foreground truncate flex-1">
+                                    {card.company}
+                                  </span>
+                                  {/* hover 显示操作 */}
+                                  <div className="flex items-center shrink-0 opacity-0 group-hover/jd:opacity-100 transition-opacity">
+                                    <span
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartEditJD(cat.id, card);
+                                      }}
+                                      className="p-0.5 text-muted-foreground hover:text-foreground"
+                                      title="编辑"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </span>
+                                    <span
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteJD(cat.id, card.id);
+                                      }}
+                                      className="p-0.5 text-muted-foreground hover:text-destructive"
+                                      title="删除"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </span>
+                                  </div>
+                                </div>
+                                <p className="truncate mt-0.5 ml-4">{card.position}</p>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* ---- 新建 JD 卡片 ---- */}
+                      {isAddingJD ? (
+                        <div className="px-2 py-2 rounded-sm border border-dashed border-primary/40 bg-white space-y-1.5">
+                          <input
+                            value={newJD.company}
+                            onChange={(e) => setNewJD((prev) => ({ ...prev, company: e.target.value }))}
+                            placeholder="公司名"
+                            className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
+                            autoFocus
+                          />
+                          <input
+                            value={newJD.position}
+                            onChange={(e) => setNewJD((prev) => ({ ...prev, position: e.target.value }))}
+                            placeholder="职位名"
+                            className="w-full h-7 px-1.5 text-xs border border-border rounded-sm outline-none focus:border-primary/50"
+                          />
+                          <Textarea
+                            value={newJD.jdContent}
+                            onChange={(e) => setNewJD((prev) => ({ ...prev, jdContent: e.target.value }))}
+                            placeholder="粘贴 JD 内容…"
+                            className="text-xs min-h-[60px] resize-y"
+                          />
+                          <div className="flex gap-1.5 justify-end">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs"
+                              onClick={() => {
+                                setAddingJDCatId(null);
+                                setNewJD({ company: "", position: "", jdContent: "" });
+                              }}
                             >
-                              <p className="font-medium text-foreground truncate">
-                                {card.company}
-                              </p>
-                              <p className="truncate mt-0.5">{card.position}</p>
-                            </button>
-                          );
-                        })
+                              <X className="w-3 h-3 mr-1" />取消
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-6 text-xs bg-primary"
+                              onClick={() => handleAddJD(cat.id)}
+                            >
+                              <Check className="w-3 h-3 mr-1" />添加
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setAddingJDCatId(cat.id)}
+                          className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                          添加 JD 卡片
+                        </button>
                       )}
                     </div>
                   )}
@@ -184,28 +426,34 @@ export default function Home() {
           </div>
         </ScrollArea>
 
-        {/* 左栏底部：新建分类输入（Phase 2 功能入口） */}
+        {/* ---- 左栏底部：新建分类 ---- */}
         <Separator />
         <div className="p-3">
           <div className="flex gap-2">
             <Input
-              placeholder="新分类名…"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAddCategory();
+              }}
+              placeholder="输入新分类名…"
               className="h-8 text-xs"
-              disabled
             />
-            <Button size="sm" className="h-8 text-xs shrink-0 bg-primary" disabled>
+            <Button
+              size="sm"
+              className="h-8 text-xs shrink-0 bg-primary"
+              onClick={handleAddCategory}
+              disabled={!newCatName.trim()}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
               新建
             </Button>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1.5 px-0.5">
-            Phase 2 启用 · 当前展示占位数据
-          </p>
         </div>
       </aside>
 
       {/* ==================== 中栏：魔法匹配输入区 ==================== */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* 中栏 Header */}
         <div className="px-6 py-4 flex items-center gap-2 bg-white border-b border-border">
           <Sparkles className="w-4 h-4 text-primary" />
           <h2 className="text-sm font-semibold text-foreground tracking-tight">
@@ -213,10 +461,8 @@ export default function Home() {
           </h2>
         </div>
 
-        {/* 输入区域 */}
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-6">
-            {/* 原始经历 */}
             <Card className="shadow-none border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -237,7 +483,6 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* 目标岗位 JD */}
             <Card className="shadow-none border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -257,7 +502,6 @@ export default function Home() {
                   value={jdText}
                   onChange={(e) => {
                     setJdText(e.target.value);
-                    // 手动修改时解除关联
                     if (selectedJD && e.target.value !== selectedJD.jdContent) {
                       setSelectedJD(null);
                     }
@@ -266,7 +510,6 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* AI 按钮 */}
             <div className="flex justify-center pt-2">
               <Button
                 size="lg"
@@ -286,7 +529,6 @@ export default function Home() {
 
       {/* ==================== 右栏：STAR 闪耀输出区 ==================== */}
       <aside className="flex-1 flex flex-col bg-white border-l border-border min-w-0">
-        {/* 右栏 Header */}
         <div className="px-6 py-4 flex items-center justify-between border-b border-border">
           <div className="flex items-center gap-2">
             <Star className="w-4 h-4 text-primary" />
@@ -300,16 +542,13 @@ export default function Home() {
           </Button>
         </div>
 
-        {/* 输出内容区 */}
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-4">
-            {/* 预览示例 */}
             <div className="rounded-sm border border-border bg-[#F4F5F7]/50 p-5 space-y-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 生成预览
               </p>
 
-              {/* 示例 Bullet Point 1 */}
               <div className="text-sm leading-relaxed">
                 <span className="text-blue-600 font-medium">主导</span>
                 了用户增长项目，利用{" "}
@@ -322,7 +561,6 @@ export default function Home() {
                 <span className="text-orange-600 font-medium">提升了 15%</span>。
               </div>
 
-              {/* 示例 Bullet Point 2 */}
               <div className="text-sm leading-relaxed">
                 <span className="text-blue-600 font-medium">搭建</span>
                 了公司级的{" "}
@@ -337,7 +575,6 @@ export default function Home() {
                 <span className="text-orange-600 font-medium">提升 40%</span>。
               </div>
 
-              {/* 示例 Bullet Point 3 */}
               <div className="text-sm leading-relaxed">
                 <span className="text-blue-600 font-medium">策划</span>
                 并
@@ -353,7 +590,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 高亮图例 */}
             <Card className="shadow-none border-border">
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
