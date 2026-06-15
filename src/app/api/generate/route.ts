@@ -45,12 +45,21 @@ export async function POST(request: NextRequest) {
   const apiKey = process.env.AI_API_KEY || "";
   const model = process.env.AI_MODEL || "deepseek-chat";
 
+  // Debug: check if env is accessible
+  const envDebug = JSON.stringify({
+    hasBaseURL: !!process.env.AI_BASE_URL,
+    hasApiKey: !!process.env.AI_API_KEY,
+    keyLen: (process.env.AI_API_KEY || "").length,
+    hasModel: !!process.env.AI_MODEL,
+  });
+
   if (!apiKey || apiKey === "sk-placeholder-replace-with-your-key") {
     return new Response(
       JSON.stringify({
         error:
           "API Key 未配置。请在 .env.local 中设置 AI_API_KEY。\n" +
           "获取 Key：https://platform.deepseek.com",
+        debug: envDebug,
       }),
       {
         status: 500,
