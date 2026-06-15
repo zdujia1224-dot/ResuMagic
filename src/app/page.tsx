@@ -482,27 +482,25 @@ export default function Home() {
 
       {/* ==================== 中栏：JD + 经历库工作台（重构） ==================== */}
       <main className={`flex-1 flex flex-col min-w-0 max-lg:pb-16 ${mobilePanel !== "input" ? "max-lg:hidden" : ""}`}>
-        <div className="px-6 py-4 flex items-center gap-2 bg-white border-b border-border">
+        <div className="px-5 py-2.5 flex items-center gap-2 bg-white border-b border-border">
           <Layers className="w-4 h-4 text-primary" />
           <h2 className="text-sm font-semibold text-foreground tracking-tight">经历匹配</h2>
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="p-6 space-y-5">
+          <div className="p-4 space-y-3.5">
             {/* ---- 上半：岗位 JD ---- */}
             <Card className="shadow-none border-border">
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-1.5 pt-3 px-4">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
                   <Briefcase className="w-4 h-4 text-muted-foreground" />目标岗位 JD
+                  {selectedJD && <span className="text-[11px] font-normal text-muted-foreground truncate">— {selectedJD.company} · {selectedJD.position}</span>}
                 </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {selectedJD ? `已关联：${selectedJD.company} - ${selectedJD.position}` : "从左侧选择职位卡片，或直接粘贴 JD 内容"}
-                </p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-3">
                 <Textarea
                   placeholder="粘贴目标岗位的职位描述（JD）…"
-                  className="min-h-[140px] resize-y text-sm leading-relaxed"
+                  className="min-h-[100px] resize-y text-sm leading-relaxed"
                   value={jdText}
                   onChange={(e) => { setJdText(e.target.value); if (selectedJD && e.target.value !== selectedJD.jdContent) setSelectedJD(null); }}
                 />
@@ -510,12 +508,12 @@ export default function Home() {
             </Card>
 
             {/* ---- 风格选择器 ---- */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">选择写作风格</p>
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">写作风格</p>
               <div className="flex flex-wrap gap-1.5">
                 {STYLE_META.map((s: StyleMeta) => (
                   <button key={s.key} onClick={() => setSelectedStyle(s.key)}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-sm text-xs font-medium border transition-colors ${selectedStyle === s.key ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-white text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"}`}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-medium border transition-colors ${selectedStyle === s.key ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-white text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"}`}
                     title={s.desc}>
                     <span className="text-sm leading-none">{s.icon}</span>{s.label}
                   </button>
@@ -523,40 +521,33 @@ export default function Home() {
               </div>
             </div>
 
-            <Separator />
-
-            {/* ---- 下半：经历库 ---- */}
-            <div className="space-y-3">
+            {/* ---- 经历库 ---- */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium text-muted-foreground">
-                  个人经历库 <span className="text-muted-foreground/60">（勾选与当前岗位相关的经历）</span>
+                  经历库 <span className="text-muted-foreground/60">（勾选相关经历）</span>
                 </p>
                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={openNewExpDialog}>
                   <Plus className="w-3.5 h-3.5" />新增经历
                 </Button>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {experiences.map((exp) => {
                   const isChecked = selectedExpIds.has(exp.id);
                   return (
                     <label key={exp.id}
-                      className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition-colors group/exp ${isChecked ? "bg-primary/5 border-primary/30" : "bg-white border-border hover:bg-muted/50"}`}>
+                      className={`flex items-center gap-2 p-2 rounded-sm border cursor-pointer transition-colors group/exp ${isChecked ? "bg-primary/5 border-primary/30" : "bg-white border-border hover:bg-muted/50"}`}>
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => toggleExpSelection(exp.id)}
-                        className="mt-0.5 h-4 w-4 rounded-sm border-border accent-primary cursor-pointer shrink-0"
+                        className="h-3.5 w-3.5 rounded-sm border-border accent-primary cursor-pointer shrink-0"
                       />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground truncate">{exp.title}</span>
-                          <span className="text-[11px] text-muted-foreground shrink-0 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />{exp.date}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{exp.rawContent}</p>
-                      </div>
+                      <span className="text-sm font-medium text-foreground truncate flex-1">{exp.title}</span>
+                      <span className="text-[11px] text-muted-foreground shrink-0 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />{exp.date}
+                      </span>
                       {/* 编辑 / 删除 */}
                       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/exp:opacity-100 transition-opacity">
                         <button
@@ -578,16 +569,10 @@ export default function Home() {
                   );
                 })}
               </div>
-
-              {selectedExpIds.size > 0 && (
-                <p className="text-[11px] text-muted-foreground text-center">
-                  已勾选 {selectedExpIds.size} 条经历，右栏同步预览
-                </p>
-              )}
             </div>
 
             {/* ---- 主按钮 ---- */}
-            <div className="flex flex-col items-center gap-2 pt-2">
+            <div className="flex flex-col items-center gap-1.5">
               {generating ? (
                 <div className="flex items-center gap-3">
                   <Button size="lg" className="px-10 text-sm font-semibold tracking-wide bg-primary/80" disabled>
