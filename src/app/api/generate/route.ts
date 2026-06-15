@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getSystemPrompt } from "@/lib/prompt";
+import { getSystemPrompt, buildProPrompt } from "@/lib/prompt";
 
 /**
  * POST /api/generate
@@ -15,12 +15,14 @@ export async function POST(request: NextRequest) {
   let experience: string;
   let jd: string;
   let style: string;
+  let promptVersion: string;
 
   try {
     const body = await request.json();
     experience = body.experience;
     jd = body.jd;
     style = body.style || "balanced";
+    promptVersion = body.promptVersion || "v1";
   } catch {
     return new Response(JSON.stringify({ error: "请求格式错误，请提供 JSON body" }), {
       status: 400,
@@ -60,13 +62,23 @@ export async function POST(request: NextRequest) {
   /* ---- 3. 构造请求 ---- */
   const apiUrl = `${baseURL.replace(/\/$/, "")}/chat/completions`;
 
-  const messages = [
-    { role: "system", content: getSystemPrompt(style) },
-    {
-      role: "user",
-      content: `【原始经历】\n${experience}\n\n【目标岗位 JD】\n${jd}\n\n请根据以上信息生成 STAR 法则 Bullet Points：`,
-    },
-  ];
+  let messages: { role: string; content: string }[];
+
+  if (promptVersion === "pro") {
+    const pro = buildProPrompt(style, jd, experience);
+    messages = [
+      { role: "system", content: pro.system },
+      { role: "user", content: pro.user },
+    ];
+  } else {
+    messages = [
+      { role: "system", content: getSystemPrompt(style) },
+      {
+        role: "user",
+        content: `【原始经历】\n${experience}\n\n【目标岗位 JD】\n${jd}\n\n请根据以上信息生成 STAR 法则 Bullet Points：`,
+      },
+    ];
+  }
 
   try {
     /* ---- 4. 调用大模型 API（非流式回退策略：优先流式，失败则非流式） ---- */

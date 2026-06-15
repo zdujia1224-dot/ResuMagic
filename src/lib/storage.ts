@@ -15,6 +15,16 @@ export function loadWorkspace(): Category[] | null {
     const data = JSON.parse(raw);
     if (!Array.isArray(data)) return null;
 
+    // Backward compat: ensure all JDCards have the new fields
+    for (const cat of data) {
+      if (!cat.jdCards) continue;
+      for (const card of cat.jdCards) {
+        if (!Array.isArray(card.selectedExpIds)) card.selectedExpIds = [];
+        if (!card.outputs || typeof card.outputs !== "object") card.outputs = {};
+        if (!card.selectedStyle) card.selectedStyle = "balanced";
+      }
+    }
+
     return data as Category[];
   } catch {
     return null;

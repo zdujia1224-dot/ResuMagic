@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,6 @@ import {
   Sparkles,
   Copy,
   Briefcase,
-  FileText,
   Star,
   Pencil,
   Trash2,
@@ -24,6 +24,8 @@ import {
   GripVertical,
   Clock,
   Layers,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { useExperiences } from "@/hooks/useExperiences";
@@ -47,6 +49,7 @@ export default function Home() {
     addJDCard,
     updateJDCard,
     deleteJDCard,
+    syncJobCardState,
   } = useWorkspace();
 
   /* ---- 左栏交互 ---- */
@@ -69,6 +72,7 @@ export default function Home() {
 
   /* ---- JD 联动 ---- */
   const [selectedJD, setSelectedJD] = useState<JDCard | null>(null);
+  const [selectedJDCatId, setSelectedJDCatId] = useState<string | null>(null);
   const [jdText, setJdText] = useState("");
 
   /* ---- 经历库：hook 驱动 + localStorage ---- */
@@ -77,7 +81,113 @@ export default function Home() {
 
   /* ---- AI 生成状态 ---- */
   const [selectedStyle, setSelectedStyle] = useState<string>("balanced");
-  const [generating] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // 缓存: key = `${expId}:${style}`
+  const [expOutputs, setExpOutputs] = useState<Record<string, string>>({});
+  const [expStatuses, setExpStatuses] = useState<Record<string, GenerateStatus>>({});
+
+  const cacheKey = (expId: string) => `${expId}:${selectedStyle}`;
+
+  /* ---- 串行生成 ---- */
+  const handleGenerate = useCallback(async () => {
+    if (!jdText.trim() || selectedExpIds.size === 0) return;
+
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setGenerating(true);
+    setAiError(null);
+
+    const ordered = Array.from(selectedExpIds);
+    const updatedOutputs = { ...expOutputs };
+    const updatedStatuses = { ...expStatuses };
+
+    for (const expId of ordered) {
+      if (controller.signal.aborted) break;
+
+      const key = cacheKey(expId);
+      // 缓存命中 — 跳过
+      if (updatedOutputs[key]) continue;
+
+      const exp = experiences.find((e) => e.id === expId);
+      if (!exp) continue;
+
+      updatedStatuses[expId] = "loading";
+      setExpStatuses({ ...updatedStatuses });
+
+      try {
+        const resp = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            experience: exp.rawContent,
+            jd: jdText,
+            style: selectedStyle,
+            promptVersion: "pro",
+          }),
+          signal: controller.signal,
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: "请求失败" }));
+          throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+
+        if (!resp.body) throw new Error("不支持流式读取");
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let html = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith("data:")) continue;
+            const dataStr = trimmed.slice(5).trim();
+            if (dataStr === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.error) throw new Error(parsed.error);
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                html += content;
+                updatedOutputs[key] = html;
+                setExpOutputs({ ...updatedOutputs });
+              }
+            } catch (e) {
+              if ((e as Error).message !== "Unexpected end of JSON input") throw e;
+            }
+          }
+        }
+
+        updatedStatuses[expId] = "success";
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") break;
+        updatedStatuses[expId] = "error";
+        setAiError(err instanceof Error ? err.message : "生成失败");
+        break; // 出错后停止后续请求
+      } finally {
+        setExpStatuses({ ...updatedStatuses });
+      }
+    }
+
+    setGenerating(false);
+    abortRef.current = null;
+  }, [jdText, selectedExpIds, selectedStyle, experiences, expOutputs, expStatuses]);
+
+  const handleAbort = () => { if (abortRef.current) abortRef.current.abort(); };
 
   /* ---- 经历弹窗 ---- */
   const [expDialogOpen, setExpDialogOpen] = useState(false);
@@ -128,6 +238,26 @@ export default function Home() {
     }
   }, [renamingCatId]);
 
+  /* ---- 勾选变化 → 同步到 JobCard ---- */
+  useEffect(() => {
+    if (!selectedJDCatId || !selectedJD) return;
+    syncJobCardState(selectedJDCatId, selectedJD.id, {
+      selectedExpIds: Array.from(selectedExpIds),
+    });
+  }, [selectedExpIds, selectedJDCatId, selectedJD, syncJobCardState]);
+
+  /* ---- 生成结果变化 → 同步到 JobCard ---- */
+  useEffect(() => {
+    if (!selectedJDCatId || !selectedJD) return;
+    syncJobCardState(selectedJDCatId, selectedJD.id, { outputs: { ...expOutputs } });
+  }, [expOutputs, selectedJDCatId, selectedJD, syncJobCardState]);
+
+  /* ---- 风格变化 → 同步到 JobCard ---- */
+  useEffect(() => {
+    if (!selectedJDCatId || !selectedJD) return;
+    syncJobCardState(selectedJDCatId, selectedJD.id, { selectedStyle });
+  }, [selectedStyle, selectedJDCatId, selectedJD, syncJobCardState]);
+
   /* ======== 左栏操作（与 Phase 5 一致） ======== */
   const handleAddCategory = () => { addCategory(newCatName); setNewCatName(""); };
   const handleStartRename = (catId: string, currentName: string) => {
@@ -143,7 +273,21 @@ export default function Home() {
     }
     deleteCategory(catId);
   };
-  const handleSelectJD = (card: JDCard) => { setSelectedJD(card); setJdText(card.jdContent); };
+  const handleSelectJD = (catId: string, card: JDCard) => {
+    setSelectedJD(card);
+    setSelectedJDCatId(catId);
+    setJdText(card.jdContent);
+    setSelectedExpIds(new Set(card.selectedExpIds || []));
+    setExpOutputs({ ...(card.outputs || {}) });
+    setSelectedStyle(card.selectedStyle || "balanced");
+    // derive statuses from outputs
+    const statuses: Record<string, GenerateStatus> = {};
+    for (const key of Object.keys(card.outputs || {})) {
+      const expId = key.split(":")[0];
+      if (expId) statuses[expId] = "success";
+    }
+    setExpStatuses(statuses);
+  };
   const handleAddJD = (catId: string) => {
     addJDCard(catId, newJD); setAddingJDCatId(null); setNewJD({ company: "", position: "", jdContent: "" });
   };
@@ -177,9 +321,44 @@ export default function Home() {
 
   const selectedExperiences = experiences.filter((e) => selectedExpIds.has(e.id));
 
-  /* ======== Copy all outputs（Phase 3 才接通） ======== */
+  /* ======== Copy all outputs ======== */
   const [copied, setCopied] = useState(false);
-  const handleCopyAll = () => { setCopied(true); setTimeout(() => setCopied(false), 2000); };
+
+  const handleCopyAll = async () => {
+    const selected = Array.from(selectedExpIds);
+    const parts: string[] = [];
+    for (const expId of selected) {
+      const exp = experiences.find((e) => e.id === expId);
+      const output = expOutputs[cacheKey(expId)];
+      if (!output) continue;
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = output;
+      const plain = (tempDiv.textContent || tempDiv.innerText || "")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => `• ${l}`)
+        .join("\n");
+      if (plain) {
+        if (exp) parts.push(`【${exp.title}】`);
+        parts.push(plain);
+      }
+    }
+    if (!parts.length) return;
+    const text = parts.join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (!mounted) {
     return (
@@ -254,7 +433,7 @@ export default function Home() {
                                 </div>
                               </div>
                             ) : (
-                              <button onClick={() => handleSelectJD(card)}
+                              <button onClick={() => handleSelectJD(cat.id, card)}
                                 className={`w-full text-left px-3 py-2 rounded-sm text-xs transition-colors border ${isActive ? "bg-primary/5 border-primary/30 text-foreground" : "bg-white border-transparent hover:bg-muted text-muted-foreground"}`}>
                                 <div className="flex items-center gap-1">
                                   <GripVertical className="w-3 h-3 text-muted-foreground/40 shrink-0" />
@@ -388,7 +567,7 @@ export default function Home() {
                           <Pencil className="w-3 h-3" />
                         </button>
                         <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteExperience(exp.id); setSelectedExpIds((prev) => { const next = new Set(prev); next.delete(exp.id); return next; }); }}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteExperience(exp.id); setSelectedExpIds((prev) => { const next = new Set(prev); next.delete(exp.id); return next; }); setExpOutputs((prev) => { const next = { ...prev }; Object.keys(next).forEach((k) => { if (k.startsWith(exp.id + ":")) delete next[k]; }); return next; }); setExpStatuses((prev) => { const next = { ...prev }; delete next[exp.id]; return next; }); }}
                           className="p-1 text-muted-foreground hover:text-destructive rounded-sm"
                           title="删除经历"
                         >
@@ -408,17 +587,29 @@ export default function Home() {
             </div>
 
             {/* ---- 主按钮 ---- */}
-            <div className="flex justify-center pt-2">
-              <Button size="lg"
-                className="px-10 text-sm font-semibold tracking-wide bg-primary hover:bg-primary/90 transition-colors"
-                disabled={selectedExpIds.size === 0 || !jdText.trim()}>
-                <Sparkles className="w-4 h-4 mr-2" />
-                AI 针对性动态匹配
-              </Button>
+            <div className="flex flex-col items-center gap-2 pt-2">
+              {generating ? (
+                <div className="flex items-center gap-3">
+                  <Button size="lg" className="px-10 text-sm font-semibold tracking-wide bg-primary/80" disabled>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />匹配中…
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleAbort}>取消</Button>
+                </div>
+              ) : (
+                <Button size="lg"
+                  className="px-10 text-sm font-semibold tracking-wide bg-primary hover:bg-primary/90 transition-colors"
+                  onClick={handleGenerate}
+                  disabled={selectedExpIds.size === 0 || !jdText.trim()}>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  AI 针对性动态匹配
+                </Button>
+              )}
+              {aiError && (
+                <div className="flex items-center gap-1.5 text-xs text-destructive mt-1">
+                  <AlertCircle className="w-3.5 h-3.5" />{aiError}
+                </div>
+              )}
             </div>
-            <p className="text-center text-[10px] text-muted-foreground">
-              Phase 3 接通模型 · 当前为 UI 骨架
-            </p>
           </div>
         </ScrollArea>
       </main>
@@ -450,7 +641,8 @@ export default function Home() {
             ) : (
               /* ---- 经历卡片列表 ---- */
               selectedExperiences.map((exp) => {
-                const status: GenerateStatus = "idle";
+                const status: GenerateStatus = expStatuses[exp.id] || "idle";
+                const output = expOutputs[cacheKey(exp.id)] || "";
                 return (
                   <Card key={exp.id} className="shadow-none border-border">
                     <CardHeader className="pb-2">
@@ -460,12 +652,34 @@ export default function Home() {
                       </p>
                     </CardHeader>
                     <CardContent>
+                      {status === "loading" && (
+                        <div className="rounded-sm bg-[#F4F5F7] p-3">
+                          {output ? (
+                            <div
+                              className="text-sm leading-relaxed space-y-0.5"
+                              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<ul>${output}</ul>`) }}
+                            />
+                          ) : (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />AI 生成中…
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {status === "success" && (
+                        <div
+                          className="text-sm leading-relaxed space-y-0.5"
+                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`<ul>${output}</ul>`) }}
+                        />
+                      )}
+                      {status === "error" && (
+                        <div className="rounded-sm bg-red-50 p-3 text-center">
+                          <p className="text-xs text-destructive">生成失败，请重试</p>
+                        </div>
+                      )}
                       {status === "idle" && (
                         <div className="rounded-sm bg-[#F4F5F7] p-3 text-center">
                           <p className="text-xs text-muted-foreground">等待 AI 匹配</p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                            点击「AI 针对性动态匹配」按钮生成 STAR Bullet Points
-                          </p>
                         </div>
                       )}
                     </CardContent>

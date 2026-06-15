@@ -25,6 +25,9 @@ const DEMO_CATEGORIES: Category[] = [
         position: "高级产品经理",
         jdContent:
           "负责用户增长方向，要求具备数据分析能力，熟悉 A/B 测试，能独立主导跨部门项目…",
+        selectedExpIds: [],
+        outputs: {},
+        selectedStyle: "balanced",
       },
       {
         id: genId(),
@@ -32,6 +35,9 @@ const DEMO_CATEGORIES: Category[] = [
         position: "产品经理（微信生态）",
         jdContent:
           "负责微信小程序生态的产品规划与落地，要求有 B 端 SaaS 经验，擅长用户研究…",
+        selectedExpIds: [],
+        outputs: {},
+        selectedStyle: "balanced",
       },
     ],
   },
@@ -45,6 +51,9 @@ const DEMO_CATEGORIES: Category[] = [
         position: "数据分析师",
         jdContent:
           "负责业务数据建模与可视化，精通 SQL/Python，能独立完成埋点设计与用户画像分析…",
+        selectedExpIds: [],
+        outputs: {},
+        selectedStyle: "balanced",
       },
     ],
   },
@@ -111,6 +120,9 @@ export function useWorkspace() {
                     company: card.company.trim(),
                     position: card.position.trim(),
                     jdContent: card.jdContent.trim(),
+                    selectedExpIds: [],
+                    outputs: {},
+                    selectedStyle: "balanced",
                   },
                 ],
               }
@@ -149,6 +161,29 @@ export function useWorkspace() {
     );
   }, []);
 
+  /* ======== 岗位运行时状态同步 ======== */
+  const syncJobCardState = useCallback(
+    (
+      catId: string,
+      cardId: string,
+      updates: Partial<Pick<JDCard, "selectedExpIds" | "outputs" | "selectedStyle">>
+    ) => {
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.id === catId
+            ? {
+                ...c,
+                jdCards: c.jdCards.map((card) =>
+                  card.id === cardId ? { ...card, ...updates } : card
+                ),
+              }
+            : c
+        )
+      );
+    },
+    []
+  );
+
   return {
     categories,
     mounted,
@@ -160,5 +195,6 @@ export function useWorkspace() {
     addJDCard,
     updateJDCard,
     deleteJDCard,
+    syncJobCardState,
   };
 }

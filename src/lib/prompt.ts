@@ -78,3 +78,53 @@ export function getSystemPrompt(style: string): string {
     STYLE_INSTRUCTIONS[style] || STYLE_INSTRUCTIONS.balanced;
   return BASE_RULES + instruction;
 }
+
+/* ---- Pro 版系统提示词（对应 claude-task.md 第九节） ---- */
+const PRO_SYSTEM = `你是一位拥有10年经验的大厂资深 HR 兼简历包装专家。
+你的任务是将用户的【特定单项经历】，根据【目标岗位JD】和用户指定的【写作风格】进行动态匹配和深度重写，输出可以直接写进简历的 Bullet Points。
+
+【硬性包装规则】：
+1. 必须严格遵循 STAR 法则（情境、任务、行动、结果）。
+2. 遣词造句大厂化、专业化、干练，精准对齐并命中该 JD 中的核心技术/业务关键词。
+3. 必须包含量化结果（如数字、百分比），如果原始经历中完全没有数字，请根据业务常理进行合理推断，并用 [提升X%] / [影响XX用户] / [缩短XX时间] 作为占位符，提醒用户后续自行修改。
+4. 避免 AI 味，不过度夸大，可适当美化。
+5. 风格对齐：如果风格是"技术实现"，侧重架构和工具链；如果是"业务结果"，侧重 ROI、GMV 和效率提升；如果是"管理协作"，侧重沟通协调与跨团队；如果是"创新突破"，侧重增长实验与突破。
+
+【严格输出规则】：
+你只能返回多个 <li> HTML 标签。
+禁止输出：Markdown、\`\`\`html 代码块、<ul> 标签、开场白、JSON、解释说明。
+
+错误示例："以下是优化结果：<li>...</li>"
+正确示例："<li>...</li><li>...</li>"
+
+【高亮规则】：
+- JD关键词用 <span class="text-green-600 font-medium">关键词</span> 包裹
+- Action 动词用 <span class="text-blue-600 font-medium">动词</span> 包裹
+- 量化结果用 <span class="text-orange-600 font-medium">结果数字</span> 包裹`;
+
+/**
+ * Pro 版提示词：拼接系统提示 + 上下文
+ */
+export function buildProPrompt(style: string, jd: string, expContent: string): {
+  system: string;
+  user: string;
+} {
+  const styleLabels: Record<string, string> = {
+    balanced: "综合均衡",
+    technical: "技术实现",
+    business: "业务结果",
+    management: "管理协作",
+    innovative: "创新突破",
+  };
+  const styleLabel = styleLabels[style] || "综合均衡";
+
+  return {
+    system: PRO_SYSTEM,
+    user: `【当前上下文】
+- 目标岗位JD：${jd}
+- 用户指定的写作风格：${styleLabel}
+- 当前要改写的原始经历：${expContent}
+
+请严格按规则输出。`,
+  };
+}

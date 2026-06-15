@@ -11,6 +11,9 @@ export interface JDCard {
   company: string;
   position: string;
   jdContent: string;
+  selectedExpIds: string[];
+  outputs: Record<string, string>; // key: `${expId}:${style}`
+  selectedStyle: string;
 }
 
 /** 全局个人经历 */
