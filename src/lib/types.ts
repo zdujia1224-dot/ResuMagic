@@ -12,3 +12,14 @@ export interface JDCard {
   position: string;
   jdContent: string;
 }
+
+/** 全局个人经历 */
+export interface Experience {
+  id: string;
+  title: string;
+  date: string;
+  rawContent: string;
+}
+
+/** 生成状态 */
+export type GenerateStatus = "idle" | "loading" | "success" | "error";
