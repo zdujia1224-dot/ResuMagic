@@ -26,40 +26,15 @@ import {
   Layers,
 } from "lucide-react";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { useExperiences } from "@/hooks/useExperiences";
 import { STYLE_META, type StyleMeta } from "@/lib/prompt";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { JDCard, Experience, GenerateStatus } from "@/lib/types";
-
-/* ---- Mock 经历数据（Phase 1 占位） ---- */
-const MOCK_EXPERIENCES: Experience[] = [
-  {
-    id: "exp-1",
-    title: "字节跳动运营实习",
-    date: "2025.07-2025.10",
-    rawContent:
-      "在字节跳动负责抖音电商活动的策划与执行，写文案和活动页，看数据复盘，也协助做了一些用户调研和竞品分析。",
-  },
-  {
-    id: "exp-2",
-    title: "阿里巴巴数据分析实习",
-    date: "2025.01-2025.06",
-    rawContent:
-      "用 SQL 取数和 Python 做一些用户行为分析，搭过几个数据看板，帮运营团队看活动效果，偶尔也做埋点需求。",
-  },
-  {
-    id: "exp-3",
-    title: "腾讯产品助理实习",
-    date: "2024.07-2024.12",
-    rawContent:
-      "参与微信小程序的产品迭代，写 PRD，画原型，跟开发沟通需求，也做过一些用户访谈和功能验收测试。",
-  },
-  {
-    id: "exp-4",
-    title: "美团商家运营项目",
-    date: "2024.03-2024.06",
-    rawContent:
-      "协助 BD 团队对接餐饮商家入驻，做一些商家培训和日常答疑，整理商家反馈并推动产品优化。",
-  },
-];
 
 export default function Home() {
   /* ---- 左栏：复用 useWorkspace ---- */
@@ -96,13 +71,40 @@ export default function Home() {
   const [selectedJD, setSelectedJD] = useState<JDCard | null>(null);
   const [jdText, setJdText] = useState("");
 
-  /* ---- 经历库状态（Phase 1: Mock；Phase 2: localStorage） ---- */
-  const [experiences] = useState<Experience[]>(MOCK_EXPERIENCES);
+  /* ---- 经历库：hook 驱动 + localStorage ---- */
+  const { experiences, addExperience, updateExperience, deleteExperience } = useExperiences();
   const [selectedExpIds, setSelectedExpIds] = useState<Set<string>>(new Set());
 
   /* ---- AI 生成状态 ---- */
   const [selectedStyle, setSelectedStyle] = useState<string>("balanced");
   const [generating] = useState(false);
+
+  /* ---- 经历弹窗 ---- */
+  const [expDialogOpen, setExpDialogOpen] = useState(false);
+  const [editingExpId, setEditingExpId] = useState<string | null>(null);
+  const [expForm, setExpForm] = useState({ title: "", date: "", rawContent: "" });
+
+  const openNewExpDialog = () => {
+    setEditingExpId(null);
+    setExpForm({ title: "", date: "", rawContent: "" });
+    setExpDialogOpen(true);
+  };
+
+  const openEditExpDialog = (exp: Experience) => {
+    setEditingExpId(exp.id);
+    setExpForm({ title: exp.title, date: exp.date, rawContent: exp.rawContent });
+    setExpDialogOpen(true);
+  };
+
+  const handleSaveExp = () => {
+    if (!expForm.title.trim()) return;
+    if (editingExpId) {
+      updateExperience(editingExpId, expForm);
+    } else {
+      addExperience(expForm);
+    }
+    setExpDialogOpen(false);
+  };
 
   /* ---- 移动端 ---- */
   type Panel = "workspace" | "input" | "output";
@@ -350,7 +352,7 @@ export default function Home() {
                 <p className="text-xs font-medium text-muted-foreground">
                   个人经历库 <span className="text-muted-foreground/60">（勾选与当前岗位相关的经历）</span>
                 </p>
-                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" disabled>
+                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={openNewExpDialog}>
                   <Plus className="w-3.5 h-3.5" />新增经历
                 </Button>
               </div>
@@ -360,7 +362,7 @@ export default function Home() {
                   const isChecked = selectedExpIds.has(exp.id);
                   return (
                     <label key={exp.id}
-                      className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition-colors ${isChecked ? "bg-primary/5 border-primary/30" : "bg-white border-border hover:bg-muted/50"}`}>
+                      className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition-colors group/exp ${isChecked ? "bg-primary/5 border-primary/30" : "bg-white border-border hover:bg-muted/50"}`}>
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -375,6 +377,23 @@ export default function Home() {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{exp.rawContent}</p>
+                      </div>
+                      {/* 编辑 / 删除 */}
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/exp:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditExpDialog(exp); }}
+                          className="p-1 text-muted-foreground hover:text-foreground rounded-sm"
+                          title="编辑经历"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteExperience(exp.id); setSelectedExpIds((prev) => { const next = new Set(prev); next.delete(exp.id); return next; }); }}
+                          className="p-1 text-muted-foreground hover:text-destructive rounded-sm"
+                          title="删除经历"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     </label>
                   );
@@ -481,6 +500,53 @@ export default function Home() {
           </div>
         </ScrollArea>
       </aside>
+
+      {/* ==================== 经历弹窗 ==================== */}
+      <Dialog open={expDialogOpen} onOpenChange={setExpDialogOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{editingExpId ? "编辑经历" : "新增经历"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">经历标题</label>
+              <Input
+                value={expForm.title}
+                onChange={(e) => setExpForm((prev) => ({ ...prev, title: e.target.value }))}
+                placeholder="如：字节跳动运营实习"
+                className="h-9 text-sm"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">时间段</label>
+              <Input
+                value={expForm.date}
+                onChange={(e) => setExpForm((prev) => ({ ...prev, date: e.target.value }))}
+                placeholder="如：2025.07-2025.10"
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">原始经历（大白话流水账）</label>
+              <Textarea
+                value={expForm.rawContent}
+                onChange={(e) => setExpForm((prev) => ({ ...prev, rawContent: e.target.value }))}
+                placeholder="把你这段经历的流水账、大白话直接写进来…"
+                className="min-h-[120px] resize-y text-sm leading-relaxed"
+              />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setExpDialogOpen(false)}>
+                取消
+              </Button>
+              <Button size="sm" className="h-8 text-xs bg-primary" onClick={handleSaveExp} disabled={!expForm.title.trim()}>
+                {editingExpId ? "保存修改" : "添加经历"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ==================== 移动端底部导航（保留 Phase 5） ==================== */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-border z-50 flex items-center justify-around">

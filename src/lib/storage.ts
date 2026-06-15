@@ -1,6 +1,7 @@
-import type { Category } from "@/lib/types";
+import type { Category, Experience } from "@/lib/types";
 
-const STORAGE_KEY = "resumagic-workspace";
+const WORKSPACE_KEY = "resumagic-workspace";
+const EXPERIENCES_KEY = "resumagic-experiences";
 
 /**
  * 从 localStorage 读取工作区数据。
@@ -8,16 +9,14 @@ const STORAGE_KEY = "resumagic-workspace";
  */
 export function loadWorkspace(): Category[] | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(WORKSPACE_KEY);
     if (!raw) return null;
 
     const data = JSON.parse(raw);
-    // 基本校验：必须是数组
     if (!Array.isArray(data)) return null;
 
     return data as Category[];
   } catch {
-    // 数据损坏静默回退
     return null;
   }
 }
@@ -27,7 +26,7 @@ export function loadWorkspace(): Category[] | null {
  */
 export function saveWorkspace(categories: Category[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(categories));
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(categories));
   } catch {
     console.warn("localStorage 写入失败（可能空间已满）");
   }
@@ -38,8 +37,30 @@ export function saveWorkspace(categories: Category[]): void {
  */
 export function clearWorkspace(): void {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(WORKSPACE_KEY);
   } catch {
     // ignore
+  }
+}
+
+/* ---- 经历库 ---- */
+
+export function loadExperiences(): Experience[] | null {
+  try {
+    const raw = localStorage.getItem(EXPERIENCES_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return null;
+    return data as Experience[];
+  } catch {
+    return null;
+  }
+}
+
+export function saveExperiences(experiences: Experience[]): void {
+  try {
+    localStorage.setItem(EXPERIENCES_KEY, JSON.stringify(experiences));
+  } catch {
+    console.warn("localStorage 写入经历失败");
   }
 }
