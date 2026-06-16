@@ -7,7 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import {
   ChevronRight,
@@ -379,7 +378,7 @@ export default function Home() {
           </div>
         </div>
         <Separator />
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto">
           <div className="p-3 space-y-1">
             {categories.map((cat) => {
               const isExpanded = expandedCats.has(cat.id);
@@ -470,7 +469,7 @@ export default function Home() {
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
         <Separator />
         <div className="p-3">
           <div className="flex gap-2">
@@ -487,7 +486,7 @@ export default function Home() {
           <h2 className="text-sm font-semibold text-foreground tracking-tight">经历匹配</h2>
         </div>
 
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto">
           <div className="p-4 space-y-3.5">
             {/* ---- 上半：岗位 JD ---- */}
             <Card className="shadow-none border-border">
@@ -596,7 +595,7 @@ export default function Home() {
               )}
             </div>
           </div>
-        </ScrollArea>
+        </div>
       </main>
 
       {/* ==================== 右栏：微型简历画布（重构） ==================== */}
@@ -612,7 +611,7 @@ export default function Home() {
           </Button>
         </div>
 
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-5">
             {selectedExperiences.length === 0 ? (
               /* ---- idle 状态 ---- */
@@ -697,7 +696,7 @@ export default function Home() {
               </CardContent>
             </Card>
           </div>
-        </ScrollArea>
+        </div>
       </aside>
 
       {/* ==================== 经历弹窗 ==================== */}
