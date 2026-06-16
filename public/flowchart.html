@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ResuMagic - AI简历魔法师 | 产品流程图</title>
+<style>
+  :root {
+    --bg: #F4F5F7;
+    --card: #fff;
+    --primary: #0052CC;
+    --text: #1a1a2e;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --green: #059669;
+    --blue: #2563eb;
+    --orange: #ea580c;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #0f0c29 0%, #1a1a3e 30%, #1a2a6c 60%, #0052CC 100%);
+    color: #fff;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ===== Hero ===== */
+  .hero {
+    text-align: center;
+    padding: 80px 24px 60px;
+    position: relative;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%; transform: translateX(-50%);
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(0,82,204,0.3) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #60a5fa 0%, #c084fc 50%, #fbbf24 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero .subtitle {
+    font-size: 1.25rem;
+    color: rgba(255,255,255,0.7);
+    margin-top: 16px;
+    font-weight: 400;
+  }
+  .hero .badge-row {
+    margin-top: 24px;
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  }
+  .hero .badge-row span {
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.85);
+  }
+
+  /* ===== Flow Section ===== */
+  .flow-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px 24px 80px;
+    position: relative;
+  }
+
+  .step {
+    display: flex;
+    gap: 28px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .step.left { flex-direction: row; }
+  .step.right { flex-direction: row-reverse; }
+
+  /* connector line */
+  .step::before {
+    content: '';
+    position: absolute;
+    left: 59px;
+    top: 80px;
+    width: 2px;
+    height: calc(100% + 12px);
+    background: linear-gradient(180deg, rgba(96,165,250,0.6) 0%, rgba(192,132,252,0.6) 100%);
+    z-index: 0;
+  }
+  .step:last-child::before { display: none; }
+  .step.right::before { left: auto; right: 59px; }
+
+  .step-num {
+    width: 56px; height: 56px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; font-weight: 800;
+    flex-shrink: 0;
+    position: relative; z-index: 1;
+    box-shadow: 0 8px 32px rgba(59,130,246,0.4);
+  }
+  .step.right .step-num {
+    background: linear-gradient(135deg, #8b5cf6, #ec4899);
+    box-shadow: 0 8px 32px rgba(139,92,246,0.4);
+  }
+
+  .step-card {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: var(--radius);
+    padding: 28px 32px;
+    flex: 1;
+    position: relative; z-index: 1;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .step-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+  }
+  .step-card h3 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #fff;
+  }
+  .step-card .emoji { font-size: 1.5rem; margin-right: 8px; }
+  .step-card .desc {
+    color: rgba(255,255,255,0.65);
+    font-size: 0.95rem;
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .step-card .highlights {
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .step-card .highlights span {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.8);
+  }
+
+  /* ===== Features Grid ===== */
+  .features {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+  .features h2 {
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 40px;
+    background: linear-gradient(135deg, #60a5fa, #c084fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+  }
+  .feature-card {
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: var(--radius);
+    padding: 28px;
+    transition: transform 0.2s;
+  }
+  .feature-card:hover { transform: translateY(-3px); }
+  .feature-card .icon { font-size: 2rem; margin-bottom: 12px; }
+  .feature-card h4 { font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; }
+  .feature-card p { color: rgba(255,255,255,0.6); font-size: 0.9rem; line-height: 1.7; }
+
+  /* ===== Stats ===== */
+  .stats {
+    max-width: 1100px; margin: 0 auto; padding: 0 24px 80px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px; text-align: center;
+  }
+  .stat h3 {
+    font-size: 3rem; font-weight: 800;
+    background: linear-gradient(135deg, #60a5fa, #fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .stat p { color: rgba(255,255,255,0.6); font-size: 0.95rem; margin-top: 4px; }
+
+  /* ===== CTA ===== */
+  .cta {
+    text-align: center;
+    padding: 0 24px 100px;
+  }
+  .cta a {
+    display: inline-block;
+    padding: 16px 48px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.15rem;
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 8px 32px rgba(59,130,246,0.5);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .cta a:hover { transform: scale(1.05); box-shadow: 0 12px 48px rgba(59,130,246,0.6); }
+  .cta p { color: rgba(255,255,255,0.5); margin-top: 16px; font-size: 0.9rem; }
+
+  /* ===== Footer ===== */
+  footer {
+    text-align: center; padding: 40px 24px;
+    color: rgba(255,255,255,0.35); font-size: 0.85rem;
+  }
+
+  /* ===== Mobile ===== */
+  @media (max-width: 768px) {
+    .step, .step.right { flex-direction: column; gap: 16px; }
+    .step::before, .step.right::before { left: 27px; right: auto; }
+    .step.right .step-num { margin-left: 0; }
+    .step-card { padding: 20px; }
+    .hero { padding: 48px 16px 36px; }
+    .hero h1 { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Hero ===== -->
+<section class="hero">
+  <h1>🧙 ResuMagic</h1>
+  <p class="subtitle">AI 简历魔法师 — 从大白话到 STAR 法则专业简历，一键搞定</p>
+  <div class="badge-row">
+    <span>🪄 AI 动态匹配 JD</span>
+    <span>📋 5 种写作风格</span>
+    <span>⚡ 流式实时生成</span>
+    <span>🎨 三色智能高亮</span>
+    <span>📎 一键复制</span>
+  </div>
+</section>
+
+<!-- ===== 用户操作流程 ===== -->
+<section class="flow-container">
+
+  <!-- Step 1 -->
+  <div class="step left">
+    <div class="step-num">1</div>
+    <div class="step-card">
+      <h3><span class="emoji">📌</span>建立你的「职位投递作战图」</h3>
+      <p class="desc">
+        打开 ResuMagic，左侧就是一整排<strong>职位管理舱</strong>。<br>
+        按岗位类型创建分类（产品经理 / 数据分析 / 运营…），<br>
+        每个分类下添加目标公司 + 职位的 JD 卡片，把对方的 JD 原文粘贴进去。<br>
+        <em style="color: rgba(255,255,255,0.45)">—— 就像你的求职作战地图，一目了然。</em>
+      </p>
+      <div class="highlights">
+        <span>📂 多分类自由创建</span>
+        <span>🔄 拖拽排序</span>
+        <span>💾 自动保存至本地</span>
+        <span>🏢 一岗位一卡片</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step right">
+    <div class="step-num">2</div>
+    <div class="step-card">
+      <h3><span class="emoji">📝</span>把你所有的经历「躺平」扔进来</h3>
+      <p class="desc">
+        不用纠结措辞——把你做过的事，<strong>用大白话流水账</strong>直接写进去就好。<br>
+        实习、项目、社团、比赛、兼职……统统加进「经历库」。<br>
+        <em style="color: rgba(255,255,255,0.45)">—— 你的专属"素材弹药库"，一次录入，无限复用。</em>
+      </p>
+      <div class="highlights">
+        <span>🗂️ 统一经历库</span>
+        <span>✏️ 随时编辑/删除</span>
+        <span>📅 时间段标注</span>
+        <span>♻️ 一次录入 反复使用</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step left">
+    <div class="step-num">3</div>
+    <div class="step-card">
+      <h3><span class="emoji">🎯</span>勾选经历 × 选择风格，精准出击</h3>
+      <p class="desc">
+        点开一个 JD 卡片，<strong>一键勾选</strong>跟这个岗位相关的经历。<br>
+        再从 5 种风格里选一个最适合的：<br>
+        综合版 / 技术实现 / 业务结果 / 管理协作 / 创新突破。
+      </p>
+      <div class="highlights">
+        <span>🎯 综合版</span>
+        <span>🛠️ 技术实现</span>
+        <span>📈 业务结果</span>
+        <span>👥 管理协作</span>
+        <span>💡 创新突破</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="step right">
+    <div class="step-num">4</div>
+    <div class="step-card">
+      <h3><span class="emoji">✨</span>AI 一秒变身大厂 HR，流式改写</h3>
+      <p class="desc">
+        点击「AI 针对性动态匹配」，背后 GPT / DeepSeek 大模型立即开工：<br>
+        它会<strong>对读你的经历和 JD</strong>，把大白话重写成专业 STAR 法则 Bullet Points，<br>
+        <strong>逐字流式输出</strong>——你能亲眼看着 AI 一句一句写出来，像打字机一样过瘾。
+      </p>
+      <div class="highlights">
+        <span>🤖 大厂HR级Prompt</span>
+        <span>⚡ 流式 SSE 生成</span>
+        <span>🔑 支持任意模型</span>
+        <span>🛑 可随时取消</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="step left">
+    <div class="step-num">5</div>
+    <div class="step-card">
+      <h3><span class="emoji">🎨</span>右栏简历画布，三色智能高亮一目了然</h3>
+      <p class="desc">
+        生成的内容自动出现在<strong>右栏的简历画布</strong>里，直观预览。<br>
+        AI 会<strong>自动高亮</strong>三类关键词汇：
+      </p>
+      <div class="highlights">
+        <span style="background:rgba(5,150,105,0.25);border-color:rgba(5,150,105,0.4);color:#6ee7b7;">🟢 JD匹配关键词</span>
+        <span style="background:rgba(37,99,235,0.25);border-color:rgba(37,99,235,0.4);color:#93c5fd;">🔵 强力Action动词</span>
+        <span style="background:rgba(234,88,12,0.25);border-color:rgba(234,88,12,0.4);color:#fdba74;">🟠 量化Result结果</span>
+      </div>
+      <p class="desc" style="margin-top:12px;">
+        👉 HR 扫一眼就能看到关键词命中、行动力和成果量化——妥妥的过筛首选！
+      </p>
+    </div>
+  </div>
+
+  <!-- Step 6 -->
+  <div class="step right">
+    <div class="step-num">6</div>
+    <div class="step-card">
+      <h3><span class="emoji">📋</span>一键复制，直接贴进简历</h3>
+      <p class="desc">
+        满意了？点击右栏顶部的「<strong>一键复制</strong>」按钮。<br>
+        所有生成结果自动合并成纯文本，含经历标题分段——<br>
+        <strong>打开 Word / Notion / 飞书简历，Ctrl+V，完事儿。</strong>
+      </p>
+      <div class="highlights">
+        <span>📋 一键复制全部</span>
+        <span>📝 自动纯文本转换</span>
+        <span>📎 带经历标题分段</span>
+        <span>✅ 复制成功反馈</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 7 - Loop -->
+  <div class="step left">
+    <div class="step-num">🔄</div>
+    <div class="step-card">
+      <h3><span class="emoji">🚀</span>同一个经历 × 不同 JD = 无数版本，海投利器</h3>
+      <p class="desc">
+        这就是 ResuMagic 最强大的地方：<br>
+        <strong>同一段经历，针对不同 JD 反复生成不同版本</strong>，每次都是量身定制。<br>
+        同一个 JD 也可以切换 5 种风格反复润色，找到最合适的一版。<br>
+        <em style="color: rgba(255,255,255,0.45)">—— 海投 50 个岗位？切一下 JD 卡片，点一下按钮，完事儿。</em>
+      </p>
+      <div class="highlights">
+        <span>🔄 一经历多JD复用</span>
+        <span>🎨 一JD多风格切换</span>
+        <span>💾 缓存生成结果</span>
+        <span>🏎️ 海投效率拉满</span>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ===== 核心亮点 ===== -->
+<section class="features">
+  <h2>🌟 为什么用 ResuMagic？</h2>
+  <div class="features-grid">
+
+    <div class="feature-card">
+      <div class="icon">🧠</div>
+      <h4>真 · STAR 法则</h4>
+      <p>不是套模板。AI 会读懂你的经历和 JD，重新组织成符合 STAR（情境-任务-行动-结果）的专业描述，大厂 HR 看了都说内行。</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="icon">🎯</div>
+      <h4>精准命中 JD 关键词</h4>
+      <p>AI 会主动提取 JD 中的核心技术/业务关键词，嵌入你的经历重写中，让你的简历在 ATS 系统和 HR 筛选中脱颖而出。</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="icon">📊</div>
+      <h4>强制量化结果</h4>
+      <p>AI 会为每条 Bullet Point 加上量化数字。即使你忘了原始数据，AI 也会根据常理推断并标注 [占位符]，提醒你后续补充。</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="icon">🛡️</div>
+      <h4>数据隐私安全</h4>
+      <p>所有数据只存储在你的浏览器 localStorage 里，不上传到我们的服务器。调用 AI 仅传递你勾选的经历内容，用完即焚。</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="icon">🌐</div>
+      <h4>支持任意大模型</h4>
+      <p>默认使用 DeepSeek，同时兼容 OpenAI / 智谱 / Kimi / 通义千问等所有 OpenAI 兼容接口，API Key 由你完全掌控。</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="icon">📱</div>
+      <h4>移动端友好</h4>
+      <p>三栏布局在手机上自动切换为底部三 Tab 导航——职位 / 匹配 / 画布，随时随地优化简历。</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===== 数据亮点 ===== -->
+<section class="stats">
+  <div class="stat">
+    <h3>6步</h3>
+    <p>从大白话到成品简历</p>
+  </div>
+  <div class="stat">
+    <h3>5</h3>
+    <p>种专业写作风格可选</p>
+  </div>
+  <div class="stat">
+    <h3>∞</h3>
+    <p>一段经历 × N个JD = 无限组合</p>
+  </div>
+  <div class="stat">
+    <h3>0</h3>
+    <p>元 · 数据完全本地存储</p>
+  </div>
+</section>
+
+<!-- ===== CTA ===== -->
+<section class="cta">
+  <a href="/">🚀 立即体验 ResuMagic</a>
+  <p>免费使用，无需注册，数据本地存储</p>
+</section>
+
+<footer>
+  © 2025 ResuMagic · AI 简历魔法师 · Build with ❤️ for job seekers
+</footer>
+
+</body>
+</html>
